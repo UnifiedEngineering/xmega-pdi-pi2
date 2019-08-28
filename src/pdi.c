@@ -195,11 +195,11 @@ bool pdi_init (uint8_t clk_pin, uint8_t data_pin, uint16_t delay_us)
   sched_setscheduler (0, SCHED_FIFO, &sp);
   mlockall (MCL_CURRENT | MCL_FUTURE);
 
-  bcm2835_gpio_clr (pdi.data);
-  bcm2835_gpio_clr (pdi.clk);
   bcm2835_gpio_fsel (pdi.clk, BCM2835_GPIO_FSEL_OUTP);
   bcm2835_gpio_fsel (pdi.data, BCM2835_GPIO_FSEL_OUTP);
-
+  bcm2835_gpio_clr (pdi.data);
+  bcm2835_gpio_clr (pdi.clk);
+  bcm2835_gpio_set_pud (pdi.data, BCM2835_GPIO_PUD_OFF);
   return true;
 }
 
@@ -207,17 +207,27 @@ bool pdi_init (uint8_t clk_pin, uint8_t data_pin, uint16_t delay_us)
 bool pdi_open (void)
 {
   // put device into PDI mode
+  bcm2835_gpio_clr (pdi.data);
+  bcm2835_gpio_set (pdi.clk);
+  bcm2835_delayMicroseconds (100); // xmega256a3 says 90-1000ns reset pulse width
   bcm2835_gpio_set (pdi.data);
-  bcm2835_delayMicroseconds (1); // xmega256a3 says 90-1000ns reset pulse width
+  bcm2835_delayMicroseconds (30); // xmega256a3 says 90-1000ns reset pulse width
   blind_clock (16); // next, 16 pdi_clk cycles within 100us
 
   static const char init[] = {
-    STCS | PDI_REG_CONTROL, 0x07, // 2 idle bits
+    STCS | PDI_REG_CONTROL, 0xc6, // 2 idle bits
+    LDCS | PDI_REG_CONTROL};
+
+  static const char init2[] = {
     STCS | PDI_REG_RESET, 0x59, // hold device in reset
     KEY, 0xFF, 0x88, 0xD8, 0xCD, 0x45, 0xAB, 0x89, 0x12, // enable NVM
   };
 
-  return pdi_send (init, sizeof (init));
+  char dummy = 0x42;
+  bool ret = pdi_sendrecv (init, sizeof (init), &dummy,1);
+  if (dummy != 0xc6) return false;
+  ret = pdi_send (init2, sizeof (init2));
+  return ret;
 }
 
 
@@ -227,11 +237,12 @@ void pdi_close (void)
     STCS | PDI_REG_RESET, 0x00,
     LDCS | PDI_REG_RESET
   };
-  char status;
+  char status = 0x42;
+  uint32_t releaseresetcount = 1000;
   do {
     if (!pdi_sendrecv (deinit, sizeof (deinit), &status, 1))
       break; // oh well...
-  } while (status != 0x00);
+  } while (status != 0x00 && releaseresetcount-- > 0);
 
   // drop out of PDI mode
   bcm2835_gpio_clr (pdi.data);
