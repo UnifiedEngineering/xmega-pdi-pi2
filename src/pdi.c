@@ -10,7 +10,8 @@
 #include <sched.h>
 #include <sys/mman.h>
 #include <string.h>
-#include <bcm2835.h>
+//#include <bcm2835.h>
+#include "fake-bcm2835.h"
 
 typedef struct
 {
