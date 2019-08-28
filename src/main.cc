@@ -60,7 +60,7 @@ int error_out (int code)
     e = "unknown error";
 
 
-  fprintf (stderr, "error: %s", e);
+  fprintf (stderr, "error: %s %d", e, code);
   if (l != -1)
     fprintf (stderr, " %d\n", l);
   else
