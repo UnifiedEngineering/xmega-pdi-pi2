@@ -267,6 +267,20 @@ int main (int argc, char *argv[])
         bail_out (12);
       }
     }
+// if verify...
+    for (auto &i : page_map)
+    {
+      char tmpbuf[256];
+      auto &p = i.second;
+      if (!nvm_read (flash_base + p.addr, tmpbuf, sizeof(tmpbuf))) {
+        set_errinfo ("failed to verify (read) page at address", p.addr);
+        bail_out (112);
+      }
+      if (memcmp(tmpbuf, p.data, sizeof(tmpbuf)) != 0) {
+        set_errinfo ("failed to verify (data mismatch) page at address", p.addr);
+        bail_out (212);
+      }
+    }
   }
 
 out:
