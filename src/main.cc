@@ -205,85 +205,93 @@ int main (int argc, char *argv[])
   if (!pdi_init (clk_pin, data_pin, pdi_delay_us))
     return error_out (3);
 
+  uint32_t attempts = 3;
+
   // from here on we need to bail_out(n) instead of error_out, so we pdi_close()
   if (!pdi_open () || !nvm_wait_enabled ())
     bail_out (4);
 
-  if (dump_mem)
-  {
-    uint32_t keep_addr = dump_addr;
-    uint32_t keep_len = dump_len;
-    while (dump_len)
-    {
-      uint16_t offs = dump_addr % 256;
-      uint16_t len = (dump_len > 256) ? 256 : dump_len;
-      uint32_t pgaddr = dump_addr - offs;
-      auto &pg = page_map[pgaddr];
-      pg.addr = pgaddr;
-      if (!nvm_read (flash_base + pgaddr, pg.data, 256))
-        bail_out (10);
+  while( attempts > 0) {
+    ret = 0;
 
-      dump_len -= len;
-      dump_addr += len;
-    }
-    dump_addr = keep_addr;
-    dump_len = keep_len;
-  }
-
-  if (chip_erase)
-  {
-    if (!nvm_chip_erase ())
+    if (dump_mem)
     {
-      set_errinfo ("failed to perform chip erase", -1);
-      bail_out (11);
-    }
-  }
-
-  if (prog_fuse)
-  {
-    for (int i = 0; i < 6; i++)
-    {
-      int16_t val = fusevalues[i];
-      if (val > 0)
+      uint32_t keep_addr = dump_addr;
+      uint32_t keep_len = dump_len;
+      while (dump_len)
       {
-        printf("Setting fuse %x to 0x%02x\n", i, val);
-        if (!nvm_prog_fuse (i, val))
+        uint16_t offs = dump_addr % 256;
+        uint16_t len = (dump_len > 256) ? 256 : dump_len;
+        uint32_t pgaddr = dump_addr - offs;
+        auto &pg = page_map[pgaddr];
+        pg.addr = pgaddr;
+        if (!nvm_read (flash_base + pgaddr, pg.data, 256))
+          bail_out (10);
+
+        dump_len -= len;
+        dump_addr += len;
+      }
+      dump_addr = keep_addr;
+      dump_len = keep_len;
+    }
+
+    if (chip_erase)
+    {
+      if (!nvm_chip_erase ())
+      {
+        set_errinfo ("failed to perform chip erase", -1);
+        bail_out (11);
+      }
+    }
+
+    if (prog_fuse)
+    {
+      for (int i = 0; i < 6; i++)
+      {
+        int16_t val = fusevalues[i];
+        if (val > 0)
         {
-          set_errinfo ("failed to program fuse", -1);
-          bail_out (11);
+          //printf("Setting fuse %x to 0x%02x\n", i, val);
+          if (!nvm_prog_fuse (i, val))
+          {
+            set_errinfo ("failed to program fuse", -1);
+            bail_out (11);
+          }
         }
       }
     }
-  }
 
-  if (fname)
-  {
-    for (auto &i : page_map)
+    if (fname)
     {
-      auto &p = i.second;
-      if (!nvm_rewrite_page (flash_base + p.addr, p.data, sizeof (p.data)))
+      for (auto &i : page_map)
       {
-        set_errinfo ("failed to rewrite page at address", p.addr);
-        bail_out (12);
+        auto &p = i.second;
+        if (!nvm_rewrite_page (flash_base + p.addr, p.data, sizeof (p.data)))
+        {
+          set_errinfo ("failed to rewrite page at address", p.addr);
+          bail_out (12);
+        }
       }
-    }
 // if verify...
-    for (auto &i : page_map)
-    {
-      char tmpbuf[256];
-      auto &p = i.second;
-      if (!nvm_read (flash_base + p.addr, tmpbuf, sizeof(tmpbuf))) {
-        set_errinfo ("failed to verify (read) page at address", p.addr);
-        bail_out (112);
-      }
-      if (memcmp(tmpbuf, p.data, sizeof(tmpbuf)) != 0) {
-        set_errinfo ("failed to verify (data mismatch) page at address", p.addr);
-        bail_out (212);
+      for (auto &i : page_map)
+      {
+        char tmpbuf[256];
+        auto &p = i.second;
+        if (!nvm_read (flash_base + p.addr, tmpbuf, sizeof(tmpbuf))) {
+          set_errinfo ("failed to verify (read) page at address", p.addr);
+          bail_out (112);
+        }
+        if (memcmp(tmpbuf, p.data, sizeof(tmpbuf)) != 0) {
+          set_errinfo ("failed to verify (data mismatch) page at address", p.addr);
+          bail_out (212);
+        }
       }
     }
-  }
 
 out:
+    if (ret == 0) break;
+    attempts--;
+  }
   pdi_close ();
 
   // ...and we're back to being allowed to go a bit slower *phew*
